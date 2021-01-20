@@ -1,0 +1,21 @@
+{
+    "name": "phpwdk/weixin-sdk",
+    "description": "微信视频号SDK",
+    "authors": [
+        {
+            "name": "汪登科",
+            "email": "support@402260.com"
+        }
+    ],
+    "require": {
+        "php": ">=5.6"
+    },
+    "autoload": {
+        "classmap": [
+            "Weixin.php"
+        ],
+        "psr-4": {
+            "WeixinVideo\\": "WeixinVideo/"
+        }
+    }
+}
