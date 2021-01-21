@@ -82,7 +82,7 @@ class BaseApi
         if (!is_array($url_arr) || empty($url_arr)) return false;
 
         $file_headers = @get_headers($url_file);
-        if($file_headers[0] == 'HTTP/1.1 404 Not Found') return false;
+        if ($file_headers[0] == 'HTTP/1.1 404 Not Found') return false;
         else return true;
     }
 
@@ -174,8 +174,8 @@ class BaseApi
         curl_setopt($this->curl, CURLOPT_POST, 1);
         curl_setopt($this->curl, CURLOPT_POSTFIELDS, $params);
         curl_setopt($this->curl, CURLOPT_HTTPHEADER, $request_headers);
-         curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
-         curl_setopt($this->curl, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($this->curl, CURLOPT_SSL_VERIFYHOST, false);
         curl_setopt($this->curl, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($this->curl, CURLOPT_CONNECTTIMEOUT, 10);
         curl_setopt($this->curl, CURLOPT_TIMEOUT, 30);
