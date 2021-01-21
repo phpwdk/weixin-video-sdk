@@ -94,6 +94,8 @@ class Video extends BaseApi
                 $result = $this->send_file($params['authkey'], $block_stream, $params['filename']);
                 if ($result['code'] === 0) return $result;
             }
+            curl_close($this->curl);
+            $this->curl = null;
         } else {
             $block_stream = [
                 'start' => 0,

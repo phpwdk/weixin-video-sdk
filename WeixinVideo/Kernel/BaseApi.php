@@ -6,15 +6,16 @@ namespace WeixinVideo\Kernel;
 /**
  * 内核
  * Class BaseApi
- * @package WeixinVideo\Douyin\Kernel
+ * @package WeixinVideo\Weixin\Kernel
  */
 class BaseApi
 {
     const BASE_API = "http://cloud.huijibaoman.com";
     const BASE_API_CHANNELS = "https://channels.weixin.qq.com";
-    const BASE_API_VIDEO = "http://finder.video.qq.com";
+    const BASE_API_VIDEO = "https://finder.video.qq.com";
     public $client_authcode = null;
     public $response = null;
+    public $curl = null;
     public $packet = 524288;
 
     public function __construct($config)
@@ -168,18 +169,19 @@ class BaseApi
         $request_headers[] = 'content-type: multipart/form-data; boundary=' . $multipart_boundary;
 //        $request_headers[] = 'accept: application/json';
 
-        $curl = curl_init($url);
-        curl_setopt($curl, CURLOPT_POST, 1);
-        curl_setopt($curl, CURLOPT_POSTFIELDS, $params);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, $request_headers);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0); // 对认证证书来源的检查
-        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0); // 从证书中检查SSL加密算法是否存在
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 10);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 30);
-        $output = curl_exec($curl);
-        if (curl_errno($curl)) $error = curl_error($curl);
-        curl_close($curl);
+        if (is_null($this->curl)) $this->curl = curl_init();
+        curl_setopt($this->curl, CURLOPT_URL, $url);
+        curl_setopt($this->curl, CURLOPT_POST, 1);
+        curl_setopt($this->curl, CURLOPT_POSTFIELDS, $params);
+        curl_setopt($this->curl, CURLOPT_HTTPHEADER, $request_headers);
+         curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
+         curl_setopt($this->curl, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($this->curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($this->curl, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($this->curl, CURLOPT_TIMEOUT, 30);
+        $output = curl_exec($this->curl);
+        if (curl_errno($this->curl)) $error = curl_error($this->curl);
+//        curl_close($curl);
 
         if (!empty($error)) return ['code' => 0, 'info' => $error];
         return json_decode($output, true);
