@@ -1,10 +1,10 @@
 {
-    "name": "phpwdk/weixin-sdk",
+    "name": "phpwdk/weixin-video-sdk",
     "description": "微信视频号SDK",
     "authors": [
         {
             "name": "汪登科",
-            "email": "9653992@qq.com"
+            "email": "9653992@.com"
         }
     ],
     "require": {
