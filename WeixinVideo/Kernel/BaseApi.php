@@ -17,6 +17,7 @@ class BaseApi
     public $response = null;
     public $curl = null;
     public $packet = 524288;
+    public $task_count = 3;
 
     public function __construct($config)
     {
@@ -82,11 +83,11 @@ class BaseApi
         if (!is_array($url_arr) || empty($url_arr)) return false;
 
         $file_headers = @get_headers($url_file);
-        if($file_headers[0] == 'HTTP/1.1 404 Not Found') return false;
+        if ($file_headers[0] == 'HTTP/1.1 404 Not Found') return false;
         else return true;
     }
 
-    public function send_file($authkey, $block_stream, $filename = '0.mp4')
+    public function send_file($authkey, $block_stream, $filename = '0.mp4', $index = null)
     {
         $params = [
             'seq' => $this->getMillisecond() . '.' . random(4, true),
@@ -96,10 +97,10 @@ class BaseApi
         ];
 
         $api_url = self::BASE_API_VIDEO . '/snsuploadbig';
-        return $this->https_byte($api_url, $params, $block_stream['stream']);
+        return $this->https_byte($api_url, $params, $block_stream['stream'], $index);
     }
 
-    public function https_byte($url, $options, $video_stream)
+    public function https_byte($url, $options, $video_stream, $index = null)
     {
         $boundary = random(16);
         $params = "------WebKitFormBoundary{$boundary}\r\n"
@@ -167,21 +168,40 @@ class BaseApi
         $request_headers = array();
         $request_headers[] = 'content-length: ' . strlen($params);
         $request_headers[] = 'content-type: multipart/form-data; boundary=' . $multipart_boundary;
-//        $request_headers[] = 'accept: application/json';
 
-        if (is_null($this->curl)) $this->curl = curl_init();
-        curl_setopt($this->curl, CURLOPT_URL, $url);
-        curl_setopt($this->curl, CURLOPT_POST, 1);
-        curl_setopt($this->curl, CURLOPT_POSTFIELDS, $params);
-        curl_setopt($this->curl, CURLOPT_HTTPHEADER, $request_headers);
-        curl_setopt($this->curl, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($this->curl, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($this->curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($this->curl, CURLOPT_TIMEOUT, 30);
-        $output = curl_exec($this->curl);
-        if (curl_errno($this->curl)) $error = curl_error($this->curl);
-        if (!empty($error)) return ['code' => 0, 'info' => $error];
-        return json_decode($output, true);
+        if (!is_null($index)) {
+            $this->curl[$index] = $this->doCurl($url, $params, $request_headers);
+            return true;
+        } else {
+            $curl = $this->doCurl($url, $params, $request_headers);
+            $output = curl_exec($curl);
+            if (curl_errno($curl)) $error = curl_error($curl);
+            curl_close($curl);
+            if (!empty($error)) return ['code' => 0, 'info' => $error];
+
+            return $output ? json_decode($output, true) : ['code' => 0, 'info' => '文件上传失败'];
+        }
+    }
+
+    public function doCurl($url, $params, $request_headers)
+    {
+        $curl = curl_init();
+        curl_setopt($curl, CURLOPT_URL, $url);
+        curl_setopt($curl, CURLOPT_POST, 1);
+//        curl_setopt($curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+        curl_setopt($curl, CURLOPT_POSTFIELDS, $params);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, $request_headers);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 60);
+//        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 30);
+//        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+//        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
+//        curl_setopt($curl, CURLOPT_SSLVERSION, 4);
+//        curl_setopt($curl, CURLOPT_SSL_CIPHER_LIST, 'TLSv1');
+//         curl_setopt($curl, CURLOPT_NOSIGNAL, 1);
+//         curl_setopt($curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+
+        return $curl;
     }
 
     public function getMillisecond()
@@ -198,5 +218,36 @@ class BaseApi
         }
 
         return is_dir($path);
+    }
+
+    public function getUUID()
+    {
+        // Generate 128 bit random sequence
+        $randmax_bits = strlen(base_convert(mt_getrandmax(), 10, 2));  // how many bits is mt_getrandmax()
+        $x = '';
+        while (strlen($x) < 128) {
+            $maxbits = (128 - strlen($x) < $randmax_bits) ? 128 - strlen($x) : $randmax_bits;
+            $x .= str_pad(base_convert(mt_rand(0, pow(2, $maxbits)), 10, 2), $maxbits, "0", STR_PAD_LEFT);
+        }
+
+        // break into fields
+        $a = array();
+        $a['time_low_part'] = substr($x, 0, 32);
+        $a['time_mid'] = substr($x, 32, 16);
+        $a['time_hi_and_version'] = substr($x, 48, 16);
+        $a['clock_seq'] = substr($x, 64, 16);
+        $a['node_part'] = substr($x, 80, 48);
+
+        // Apply bit masks for "random or pseudo-random" version per RFC
+        $a['time_hi_and_version'] = substr_replace($a['time_hi_and_version'], '0100', 0, 4);
+        $a['clock_seq'] = substr_replace($a['clock_seq'], '10', 0, 2);
+
+        // Format output
+        return sprintf('%s-%s-%s-%s-%s',
+            str_pad(base_convert($a['time_low_part'], 2, 16), 8, "0", STR_PAD_LEFT),
+            str_pad(base_convert($a['time_mid'], 2, 16), 4, "0", STR_PAD_LEFT),
+            str_pad(base_convert($a['time_hi_and_version'], 2, 16), 4, "0", STR_PAD_LEFT),
+            str_pad(base_convert($a['clock_seq'], 2, 16), 4, "0", STR_PAD_LEFT),
+            str_pad(base_convert($a['node_part'], 2, 16), 12, "0", STR_PAD_LEFT));
     }
 }
