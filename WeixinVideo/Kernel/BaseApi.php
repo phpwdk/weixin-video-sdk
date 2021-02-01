@@ -18,9 +18,11 @@ class BaseApi
     public $curl = null;
     public $packet = 524288;
     public $task_count = 3;
+    public $is_command = false;
 
     public function __construct($config)
     {
+        $this->is_command = !empty($config['is_command']) ? !!$config['is_command'] : false;
         $this->client_authcode = $config['client_authcode'];
     }
 
@@ -40,37 +42,38 @@ class BaseApi
         return $result['data'];
     }
 
-    public function https_post($url, $data = [])
+    public function https_post($url, $data = [], $is_cloud = true, $is_header = false)
     {
-        $data['client_authcode'] = $this->client_authcode;
-        if (!isset($data['token'])) $data['token'] = !empty($_SESSION['video_token']) ? $_SESSION['video_token'] : '';
+        if ($is_cloud === true) {
+            $data['client_authcode'] = $this->client_authcode;
+            if (!isset($data['token'])) $data['token'] = !empty($_SESSION['video_token']) ? $_SESSION['video_token'] : '';
+        }
         $header = [
             'Accept:application/json', 'Content-Type:application/json'
         ];
-        $this->response = $this->https_request($url, json_encode($data), $header);
-        return json_decode($this->response, true);
+        $this->response = $this->https_request($url, json_encode($data), $header, $is_header);
+        return false === $is_header ? json_decode($this->response, true) : $this->response;
     }
 
-    public function https_request($url, $data = null, $headers = null)
+    public function https_request($url, $data = null, $headers = null, $is_header = false, $timeout = 60)
     {
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $url);
-        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
-        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
         if (!empty($data)) {
             curl_setopt($curl, CURLOPT_POST, 1);
             curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
         }
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 60);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+        curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
+        if ($is_header === true) curl_setopt($curl, CURLOPT_HEADER, 1);
         if (!empty($headers)) {
             curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
         }
-        if (defined('CURLOPT_IPRESOLVE') && defined('CURL_IPRESOLVE_V4')) {
-            curl_setopt($curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
-        }
         $output = curl_exec($curl);
         curl_close($curl);
+        if ($is_header === true) $output = $this->ihttp_response_parse($output);
+
         return $output;
     }
 
@@ -90,7 +93,7 @@ class BaseApi
     public function send_file($authkey, $block_stream, $filename = '0.mp4', $index = null)
     {
         $params = [
-            'seq' => $this->getMillisecond() . '.' . random(4, true),
+            'seq' => $this->getMillisecond() . '.' . $this->random(4, true),
             'weixinnum' => $block_stream['weixinnum'], 'apptype' => 251, 'filetype' => $block_stream['filetype'], 'authkey' => $authkey,
             'filekey' => $filename, 'totalsize' => $block_stream['filesize'], 'fileuuid' => $block_stream['fileuuid'],
             'rangestart' => $block_stream['start'], 'rangeend' => $block_stream['end'], 'blockmd5' => $block_stream['md5'],
@@ -102,7 +105,7 @@ class BaseApi
 
     public function https_byte($url, $options, $video_stream, $index = null)
     {
-        $boundary = random(16);
+        $boundary = $this->random(16);
         $params = "------WebKitFormBoundary{$boundary}\r\n"
             . "Content-Disposition: form-data; name=\"ver\"\r\n"
             . "\r\n1\r\n"
@@ -169,37 +172,213 @@ class BaseApi
         $request_headers[] = 'content-length: ' . strlen($params);
         $request_headers[] = 'content-type: multipart/form-data; boundary=' . $multipart_boundary;
 
-        if (!is_null($index)) {
-            $this->curl[$index] = $this->doCurl($url, $params, $request_headers);
-            return true;
-        } else {
-            $curl = $this->doCurl($url, $params, $request_headers);
-            $output = curl_exec($curl);
-            if (curl_errno($curl)) $error = curl_error($curl);
-            curl_close($curl);
-            if (!empty($error)) return ['code' => 0, 'info' => $error];
+        if (function_exists('curl_init') && function_exists('curl_exec')) {
+            if (!is_null($index)) {
+                $this->curl[$index] = $this->doCurl($url, $params, $request_headers);
+                return true;
+            } else {
+                $curl = $this->doCurl($url, $params, $request_headers);
+                $output = curl_exec($curl);
+                if (curl_errno($curl)) $error = curl_error($curl);
+                curl_close($curl);
+                if (!empty($error)) return ['code' => 0, 'info' => $error];
 
-            return $output ? json_decode($output, true) : ['code' => 0, 'info' => '文件上传失败'];
+                return $output ? json_decode($output, true) : ['code' => 0, 'info' => '文件上传失败'];
+            }
+        } else return ['code' => 0, 'info' => '未安装CURL扩展'];
+        /*$urlset = $this->ihttp_parse_url($url, true);
+        if (!empty($urlset['ip'])) {
+            $urlset['host'] = $urlset['ip'];
         }
+
+        $body = $this->ihttp_build_httpbody($url, $params, $request_headers);
+        var_dump($body);
+
+        if ($urlset['scheme'] == 'https') {
+            $fp = $this->ihttp_socketopen('ssl://' . $urlset['host'], $urlset['port'], $errno, $error);
+        } else {
+            $fp = $this->ihttp_socketopen($urlset['host'], $urlset['port'], $errno, $error);
+        }
+        stream_set_blocking($fp, $timeout > 0 ? true : false);
+        stream_set_timeout($fp, ini_get('default_socket_timeout'));
+        if (!$fp) {
+            return ['code' => 0, 'info' => $error];
+        } else {
+            fwrite($fp, $body);
+            $content = '';
+            if ($timeout > 0) {
+                while (!feof($fp)) {
+                    $content .= fgets($fp, 512);
+                }
+            }
+            fclose($fp);
+            return $this->ihttp_response_parse($content, true);
+        }*/
     }
 
-    public function doCurl($url, $params, $request_headers)
+    function ihttp_response_parse($data, $chunked = false)
+    {
+        $rlt = array();
+
+        $pos = strpos($data, "\r\n\r\n");
+        $split1[0] = substr($data, 0, $pos);
+        $split1[1] = substr($data, $pos + 4, strlen($data));
+
+        $split2 = explode("\r\n", $split1[0], 2);
+        preg_match('/^(\S+) (\S+) (.*)$/', $split2[0], $matches);
+        $rlt['code'] = !empty($matches[2]) ? $matches[2] : 200;
+        $rlt['status'] = !empty($matches[3]) ? $matches[3] : 'OK';
+        $rlt['responseline'] = !empty($split2[0]) ? $split2[0] : '';
+        $rlt['headers'] = [];
+        $header = explode("\r\n", $split2[1]);
+        $isgzip = false;
+        $ischunk = false;
+        foreach ($header as $v) {
+            $pos = strpos($v, ':');
+            $key = substr($v, 0, $pos);
+            $value = trim(substr($v, $pos + 1));
+            if (isset($rlt['headers'][$key]) && is_array($rlt['headers'][$key])) {
+                $rlt['headers'][$key][] = $value;
+            } elseif (!empty($rlt['headers'][$key])) {
+                $temp = $rlt['headers'][$key];
+                unset($rlt['headers'][$key]);
+                $rlt['headers'][$key][] = $temp;
+                $rlt['headers'][$key][] = $value;
+            } else {
+                $rlt['headers'][$key] = $value;
+            }
+            if (!$isgzip && strtolower($key) == 'content-encoding' && strtolower($value) == 'gzip') {
+                $isgzip = true;
+            }
+            if (!$ischunk && strtolower($key) == 'transfer-encoding' && strtolower($value) == 'chunked') {
+                $ischunk = true;
+            }
+        }
+        if ($chunked && $ischunk) {
+            $rlt['content'] = $this->ihttp_response_parse_unchunk($split1[1]);
+        } else {
+            $rlt['content'] = $split1[1];
+        }
+        if ($isgzip && function_exists('gzdecode')) {
+            $rlt['content'] = gzdecode($rlt['content']);
+        }
+
+        $rlt['meta'] = $data;
+        if ($rlt['code'] == '100') {
+            return $this->ihttp_response_parse($rlt['content']);
+        }
+        return $rlt;
+    }
+
+    function ihttp_response_parse_unchunk($str = null)
+    {
+        if (!is_string($str) or strlen($str) < 1) {
+            return false;
+        }
+        $eol = "\r\n";
+        $add = strlen($eol);
+        $tmp = $str;
+        $str = '';
+        do {
+            $tmp = ltrim($tmp);
+            $pos = strpos($tmp, $eol);
+            if ($pos === false) {
+                return false;
+            }
+            $len = hexdec(substr($tmp, 0, $pos));
+            if (!is_numeric($len) or $len < 0) {
+                return false;
+            }
+            $str .= substr($tmp, ($pos + $add), $len);
+            $tmp = substr($tmp, ($len + $pos + $add));
+            $check = trim($tmp);
+        } while (!empty($check));
+        unset($tmp);
+        return $str;
+    }
+
+    function ihttp_parse_url($url, $set_default_port = false)
+    {
+        if (empty($url)) return false;
+        $urlset = parse_url($url);
+        if (!empty($urlset['scheme']) && !in_array($urlset['scheme'], array('http', 'https'))) {
+            return ['code' => 0, 'info' => '只能使用 http 及 https 协议'];
+        }
+        if (empty($urlset['path'])) {
+            $urlset['path'] = '/';
+        }
+        if (!empty($urlset['query'])) {
+            $urlset['query'] = "?{$urlset['query']}";
+        }
+        if (strexists($url, 'https://') && !extension_loaded('openssl')) {
+            if (!extension_loaded("openssl")) {
+                return ['code' => 0, 'info' => '请开启您PHP环境的openssl'];
+            }
+        }
+        if (empty($urlset['host'])) {
+            $current_url = parse_url($GLOBALS['_W']['siteroot']);
+            $urlset['host'] = $current_url['host'];
+            $urlset['scheme'] = $current_url['scheme'];
+            $urlset['path'] = $current_url['path'] . 'web/' . str_replace('./', '', $urlset['path']);
+            $urlset['ip'] = '127.0.0.1';
+        } else if (!ihttp_allow_host($urlset['host'])) {
+            return ['code' => 0, 'info' => 'host 非法'];
+        }
+
+        if ($set_default_port && empty($urlset['port'])) {
+            $urlset['port'] = $urlset['scheme'] == 'https' ? '443' : '80';
+        }
+        return $urlset;
+    }
+
+    function ihttp_socketopen($hostname, $port = 80, &$errno, &$errstr, $timeout = 15)
+    {
+        $fp = '';
+        if (function_exists('fsockopen')) {
+            $fp = @fsockopen($hostname, $port, $errno, $errstr, $timeout);
+        } elseif (function_exists('pfsockopen')) {
+            $fp = @pfsockopen($hostname, $port, $errno, $errstr, $timeout);
+        } elseif (function_exists('stream_socket_client')) {
+            $fp = @stream_socket_client($hostname . ':' . $port, $errno, $errstr, $timeout);
+        }
+        return $fp;
+    }
+
+    function ihttp_build_httpbody($url, $body, $request_headers)
+    {
+        $urlset = $this->ihttp_parse_url($url, true);
+        if (!empty($urlset['ip'])) {
+            $extra['ip'] = $urlset['ip'];
+        }
+        $fdata = "POST {$urlset['path']}{$urlset['query']} HTTP/1.1\r\n";
+        $fdata .= "Accept: application/json, text/plain, */*\r\n";
+        $fdata .= "Accept-Language: zh-cn\r\n";
+        $fdata .= "Host: {$urlset['host']}\r\n";
+        $fdata .= "Referer: https://channels.weixin.qq.com/\r\n";
+        $fdata .= "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:9.0.1) Gecko/20100101 Firefox/9.0.1\r\n";
+        if (function_exists('gzdecode')) {
+            $fdata .= "Accept-Encoding: gzip, deflate\r\n";
+        }
+        $fdata .= "Connection: close\r\n";
+        if (!empty($request_headers) && is_array($request_headers)) {
+            foreach ($request_headers as $opt => $value) {
+                $fdata .= $value . "\r\n";
+            }
+        }
+        $fdata .= "\r\n" . $body . "\r\n";
+        return $fdata;
+    }
+
+    public function doCurl($url, $params, $request_headers, $timeout = 60)
     {
         $curl = curl_init();
         curl_setopt($curl, CURLOPT_URL, $url);
         curl_setopt($curl, CURLOPT_POST, 1);
-//        curl_setopt($curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
         curl_setopt($curl, CURLOPT_POSTFIELDS, $params);
         curl_setopt($curl, CURLOPT_HTTPHEADER, $request_headers);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_TIMEOUT, 60);
-//        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 30);
-//        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-//        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
-//        curl_setopt($curl, CURLOPT_SSLVERSION, 4);
-//        curl_setopt($curl, CURLOPT_SSL_CIPHER_LIST, 'TLSv1');
-//         curl_setopt($curl, CURLOPT_NOSIGNAL, 1);
-//         curl_setopt($curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+        curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
 
         return $curl;
     }
@@ -249,5 +428,22 @@ class BaseApi
             str_pad(base_convert($a['time_hi_and_version'], 2, 16), 4, "0", STR_PAD_LEFT),
             str_pad(base_convert($a['clock_seq'], 2, 16), 4, "0", STR_PAD_LEFT),
             str_pad(base_convert($a['node_part'], 2, 16), 12, "0", STR_PAD_LEFT));
+    }
+
+    public function random($length, $numeric = FALSE)
+    {
+        $seed = base_convert(md5(microtime()), 16, $numeric ? 10 : 35);
+        $seed = $numeric ? (str_replace('0', '', $seed) . '012340567890') : ($seed . 'zZ' . strtoupper($seed));
+        if ($numeric) {
+            $hash = '';
+        } else {
+            $hash = chr(rand(1, 26) + rand(0, 1) * 32 + 64);
+            $length--;
+        }
+        $max = strlen($seed) - 1;
+        for ($i = 0; $i < $length; $i++) {
+            $hash .= $seed{mt_rand(0, $max)};
+        }
+        return $hash;
     }
 }

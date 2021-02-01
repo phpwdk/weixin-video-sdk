@@ -66,7 +66,7 @@ class Video extends BaseApi
             'token' => $params['token'], 'raw_key_buff' => $params['raw_key_buff'], 'log_finder_id' => $params['log_finder_id']
         ]);
         if ($upload_params['errCode'] != 0)
-            return ['code' => 0, 'info' => '权限不足'];
+            return ['code' => 0, 'info' => '登陆超时'];
         $authkey = $upload_params['data']['authKey'];
         $weixinnum = $upload_params['data']['uin'];
 
@@ -101,12 +101,15 @@ class Video extends BaseApi
                     'weixinnum' => $weixinnum
                 ];
                 $result = $this->send_file($authkey, $block_stream, $params['filename']);
-                if ($result['code'] === 0) {
+                if ($result['code' === 0]) phpwdk_error($result['info']);
+                $content = json_decode($result['content'], true);
+                if ($content['code'] === 0) {
                     $idx = 0;
                     while (true) {
                         if ($idx === 2) return ['code' => 0, 'info' => $i];
                         $result = $this->send_file($authkey, $block_stream, $params['filename']);
-                        if ($result['retcode'] === 0) break;
+                        $content = json_decode($result['content'], true);
+                        if ($content['retcode'] === 0) break;
                         $idx++;
                     }
                 }
@@ -124,9 +127,10 @@ class Video extends BaseApi
                 'weixinnum' => $weixinnum,
             ];
             $result = $this->send_file($authkey, $block_stream, $params['filename']);
-            if ($result['code'] === 0) return $result;
+            $content = json_decode($result['content'], true);
+            if ($content['code'] === 0) return $result;
         }
-        if ($result['retcode'] === 0 && isset($result['fileurl'])) return ['code' => 1, 'fileurl' => $result['fileurl'], 'filesize' => $file_size];
+        if ($content['retcode'] === 0 && isset($content['fileurl'])) return ['code' => 1, 'fileurl' => $content['fileurl'], 'filesize' => $file_size];
         else return ['code' => 0, 'info' => '上传文件失败'];
     }
 
@@ -149,8 +153,8 @@ class Video extends BaseApi
         $upload_params = $this->helper_upload([
             'token' => $params['token'], 'raw_key_buff' => $params['raw_key_buff'], 'log_finder_id' => $params['log_finder_id']
         ]);
-        if ($upload_params['errCode'] != 0)
-            return ['code' => 0, 'info' => '权限不足'];
+        if ($upload_params['code'] != 1)
+            return ['code' => 0, 'info' => '登陆超时'];
         $authkey = $upload_params['data']['authKey'];
         $weixinnum = $upload_params['data']['uin'];
 
@@ -217,7 +221,7 @@ class Video extends BaseApi
                     if (!isset($this->curl[$index_key])) continue;
                     $output = curl_multi_getcontent($this->curl[$index_key]);
                     if (empty($output)) goto retry;
-                    curl_close($this->curl[$index_key]);
+                    true === $this->is_command || curl_close($this->curl[$index_key]);
                     curl_multi_remove_handle($mh, $this->curl[$index_key]);
                     if ($end_num === $index_key) $result = json_decode($output, true);
                 }
@@ -236,7 +240,7 @@ class Video extends BaseApi
                 'weixinnum' => $weixinnum,
             ];
             $result = $this->send_file($authkey, $block_stream, $params['filename']);
-            if ($result['code'] === 0) return $result;
+            if (isset($result['code']) && $result['code'] === 0) return $result;
         }
 
         if ($result['retcode'] === 0 && isset($result['fileurl'])) return ['code' => 1, 'fileurl' => $result['fileurl'], 'filesize' => $file_size];

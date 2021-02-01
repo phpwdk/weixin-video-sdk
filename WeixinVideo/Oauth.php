@@ -28,7 +28,7 @@ class Oauth extends BaseApi
 
         $api_url .= '?' . http_build_query($params);
 
-        return phpwdk_post($api_url, $post);
+        return $this->https_post($api_url, $post, false, true);
     }
 
     public function set_oauth($params)
