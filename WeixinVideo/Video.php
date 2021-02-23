@@ -201,7 +201,11 @@ class Video extends BaseApi
                     if ($index === $block_num) break;
                 }
 
+                $key = 0;
                 retry:
+                if ($key === 3) break;
+                $key++;
+                sleep(3);
                 $active = null;
                 do {
                     $mrc = curl_multi_exec($mh, $active);
@@ -220,10 +224,17 @@ class Video extends BaseApi
                 for ($index_key; $index_key < $index; $index_key++) {
                     if (!isset($this->curl[$index_key])) continue;
                     $output = curl_multi_getcontent($this->curl[$index_key]);
+                    var_dump([$output, $this->is_command, $index_key]);
                     if (empty($output)) goto retry;
                     true === $this->is_command || curl_close($this->curl[$index_key]);
                     curl_multi_remove_handle($mh, $this->curl[$index_key]);
                     if ($end_num === $index_key) $result = json_decode($output, true);
+                }
+            }
+
+            if (true === $this->is_command) {
+                for ($i = 0; $i < $index_key; $i++) {
+                    curl_close($this->curl[$i]);
                 }
             }
 

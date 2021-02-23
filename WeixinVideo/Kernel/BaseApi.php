@@ -63,8 +63,10 @@ class BaseApi
             curl_setopt($curl, CURLOPT_POST, 1);
             curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
         }
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 20);
         curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
         if ($is_header === true) curl_setopt($curl, CURLOPT_HEADER, 1);
         if (!empty($headers)) {
@@ -171,6 +173,12 @@ class BaseApi
         $request_headers = array();
         $request_headers[] = 'content-length: ' . strlen($params);
         $request_headers[] = 'content-type: multipart/form-data; boundary=' . $multipart_boundary;
+        $request_headers[] = 'accept: application/json, text/plain, */*';
+        $request_headers[] = 'accept-encoding: gzip, deflate, br';
+        $request_headers[] = 'accept-language: zh-CN,zh;q=0.9';
+        $request_headers[] = 'origin: https://channels.weixin.qq.com';
+        $request_headers[] = 'referer: https://channels.weixin.qq.com/';
+        $request_headers[] = 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36';
 
         if (function_exists('curl_init') && function_exists('curl_exec')) {
             if (!is_null($index)) {
@@ -180,40 +188,12 @@ class BaseApi
                 $curl = $this->doCurl($url, $params, $request_headers);
                 $output = curl_exec($curl);
                 if (curl_errno($curl)) $error = curl_error($curl);
-                curl_close($curl);
+                true === $this->is_command || curl_close($curl);
                 if (!empty($error)) return ['code' => 0, 'info' => $error];
 
                 return $output ? json_decode($output, true) : ['code' => 0, 'info' => '文件上传失败'];
             }
         } else return ['code' => 0, 'info' => '未安装CURL扩展'];
-        /*$urlset = $this->ihttp_parse_url($url, true);
-        if (!empty($urlset['ip'])) {
-            $urlset['host'] = $urlset['ip'];
-        }
-
-        $body = $this->ihttp_build_httpbody($url, $params, $request_headers);
-        var_dump($body);
-
-        if ($urlset['scheme'] == 'https') {
-            $fp = $this->ihttp_socketopen('ssl://' . $urlset['host'], $urlset['port'], $errno, $error);
-        } else {
-            $fp = $this->ihttp_socketopen($urlset['host'], $urlset['port'], $errno, $error);
-        }
-        stream_set_blocking($fp, $timeout > 0 ? true : false);
-        stream_set_timeout($fp, ini_get('default_socket_timeout'));
-        if (!$fp) {
-            return ['code' => 0, 'info' => $error];
-        } else {
-            fwrite($fp, $body);
-            $content = '';
-            if ($timeout > 0) {
-                while (!feof($fp)) {
-                    $content .= fgets($fp, 512);
-                }
-            }
-            fclose($fp);
-            return $this->ihttp_response_parse($content, true);
-        }*/
     }
 
     function ihttp_response_parse($data, $chunked = false)
@@ -310,19 +290,10 @@ class BaseApi
         if (!empty($urlset['query'])) {
             $urlset['query'] = "?{$urlset['query']}";
         }
-        if (strexists($url, 'https://') && !extension_loaded('openssl')) {
+        if (!strpos($url, 'https://') === false && !extension_loaded('openssl')) {
             if (!extension_loaded("openssl")) {
                 return ['code' => 0, 'info' => '请开启您PHP环境的openssl'];
             }
-        }
-        if (empty($urlset['host'])) {
-            $current_url = parse_url($GLOBALS['_W']['siteroot']);
-            $urlset['host'] = $current_url['host'];
-            $urlset['scheme'] = $current_url['scheme'];
-            $urlset['path'] = $current_url['path'] . 'web/' . str_replace('./', '', $urlset['path']);
-            $urlset['ip'] = '127.0.0.1';
-        } else if (!ihttp_allow_host($urlset['host'])) {
-            return ['code' => 0, 'info' => 'host 非法'];
         }
 
         if ($set_default_port && empty($urlset['port'])) {
@@ -354,18 +325,18 @@ class BaseApi
         $fdata .= "Accept: application/json, text/plain, */*\r\n";
         $fdata .= "Accept-Language: zh-cn\r\n";
         $fdata .= "Host: {$urlset['host']}\r\n";
-        $fdata .= "Referer: https://channels.weixin.qq.com/\r\n";
         $fdata .= "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:9.0.1) Gecko/20100101 Firefox/9.0.1\r\n";
         if (function_exists('gzdecode')) {
             $fdata .= "Accept-Encoding: gzip, deflate\r\n";
         }
-        $fdata .= "Connection: close\r\n";
         if (!empty($request_headers) && is_array($request_headers)) {
             foreach ($request_headers as $opt => $value) {
                 $fdata .= $value . "\r\n";
             }
         }
-        $fdata .= "\r\n" . $body . "\r\n";
+        $fdata .= "Connection: close\r\n\r\n";
+//        var_dump($fdata);
+        $fdata .= $body . "\r\n";
         return $fdata;
     }
 
@@ -376,8 +347,10 @@ class BaseApi
         curl_setopt($curl, CURLOPT_POST, 1);
         curl_setopt($curl, CURLOPT_POSTFIELDS, $params);
         curl_setopt($curl, CURLOPT_HTTPHEADER, $request_headers);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, $timeout);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 20);
         curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
 
         return $curl;
